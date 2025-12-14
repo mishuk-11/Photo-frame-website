@@ -9,9 +9,20 @@ import re
 
 # --- CONFIGURATION ---
 app = Flask(__name__)
-UPLOAD_FOLDER = os.path.join(app.root_path, 'uploads')
-DB_PATH = os.path.join(app.root_path, 'settings.json')
+
+# --- CRITICAL FIX: Use /tmp directory for writable files on serverless platforms ---
+# Check if running in a cloud environment (e.g., Vercel, Heroku) and use the /tmp directory
+# Otherwise, use the local path for development.
+if os.environ.get('VERCEL') or os.environ.get('DYNO'): 
+    BASE_DIR = '/tmp'
+else:
+    BASE_DIR = app.root_path
+
+UPLOAD_FOLDER = os.path.join(BASE_DIR, 'uploads')
+DB_PATH = os.path.join(BASE_DIR, 'settings.json')
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+# --- END CRITICAL FIX ---
+
 ALLOWED_IMAGE_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'} 
 
 db = TinyDB(DB_PATH)
@@ -27,7 +38,7 @@ SUPER_ADMIN_ROUTE_NAME = 'daddy'
 SUPER_ADMIN_TEMPLATE_NAME = 'daddy.html' 
 # ------------------------------------------------------------------
 
-# Ensure uploads folder exists
+# Ensure uploads folder exists (This will now run successfully in /tmp)
 if not os.path.exists(UPLOAD_FOLDER):
     os.makedirs(UPLOAD_FOLDER)
 
@@ -61,6 +72,7 @@ def allowed_template(filename):
 # --- ROUTE TO SERVE UPLOADED FILES ---
 @app.route('/uploads/<path:filename>')
 def uploaded_file(filename):
+    # CRITICAL: This serves files from the /tmp/uploads directory on the server
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
 # --- FRONT-END ROUTES ---
@@ -71,33 +83,18 @@ def admin_page():
 
 @app.route(f'/{SUPER_ADMIN_ROUTE_NAME}') 
 def super_admin_page():
+    # Daddy.html is served from the root of the app's code path
     return send_from_directory(app.root_path, SUPER_ADMIN_TEMPLATE_NAME) 
 
 @app.route('/')
 def home():
     return render_template('index.html') 
 
-# --- ADMIN API ROUTES ---
-
-@app.route('/check_secondary_password', methods=['POST'])
-def check_secondary_password():
-    """Securely checks the secondary password before allowing logo update."""
-    submitted_password = request.form.get('secondary_password')
-    settings = db.get(Settings.type == 'global')
-    
-    if not settings:
-        return jsonify({'success': False, 'message': 'Configuration not found.'}), 404
-        
-    correct_password = settings.get(ADMIN_SECONDARY_PASSWORD_KEY, 'ImInZu') 
-    
-    if submitted_password == correct_password:
-        return jsonify({'success': True}), 200
-    else:
-        return jsonify({'success': False, 'message': 'Secondary password incorrect.'}), 401
+# --- ADMIN API ROUTES (Login and Password Management) ---
 
 @app.route('/admin_login_check', methods=['POST'])
 def admin_login_check():
-    """Server-side check for Coordinator Admin login."""
+    """Server-side check for primary admin login."""
     submitted_password = request.form.get('password')
     settings = db.get(Settings.type == 'global')
     
@@ -174,7 +171,23 @@ def super_admin_password_reset():
     return jsonify({'success': True, 'message': 'Admin and Secondary passwords updated successfully!'}), 200
 
 
-@app.route('/get_settings') 
+@app.route('/check_secondary_password', methods=['POST'])
+def check_secondary_password():
+    """Securely checks the secondary password before allowing logo update."""
+    submitted_password = request.form.get('secondary_password')
+    settings = db.get(Settings.type == 'global')
+    
+    if not settings:
+        return jsonify({'success': False, 'message': 'Configuration not found.'}), 404
+        
+    correct_password = settings.get(ADMIN_SECONDARY_PASSWORD_KEY, 'ImInZu') 
+    
+    if submitted_password == correct_password:
+        return jsonify({'success': True}), 200
+    else:
+        return jsonify({'success': False, 'message': 'Secondary password incorrect.'}), 401
+
+@app.route('/get_settings') # Fetch general settings
 def get_settings():
     settings = db.get(Settings.type == 'global')
     if not settings:
@@ -196,7 +209,7 @@ def get_settings():
 
 # --- ADMIN ROUTES (File Management) ---
 
-@app.route('/update_settings', methods=['POST']) 
+@app.route('/update_settings', methods=['POST']) # Update content settings
 def update_settings():
     settings = db.get(Settings.type == 'global')
     if not settings:
@@ -233,7 +246,8 @@ def update_settings():
                     else:
                         return False, "Invalid file key prefix."
 
-                    filepath = os.path.join(app.config['UPLOAD_FOLDER'], constant_filename)
+                    # Filepath is now guaranteed to be in /tmp on the server
+                    filepath = os.path.join(app.config['UPLOAD_FOLDER'], constant_filename) 
                     old_filename_key = f'{setting_key_prefix}_filename'
                     
                     old_filename = settings.get(old_filename_key)
@@ -287,7 +301,8 @@ def merge_and_download():
     if not template_filename:
         return 'Template file not specified. Please upload it via the Admin Panel.', 500
 
-    TEMPLATE_PATH = os.path.join(app.config['UPLOAD_FOLDER'], template_filename)
+    # CRITICAL: This path must use the base directory defined earlier
+    TEMPLATE_PATH = os.path.join(app.config['UPLOAD_FOLDER'], template_filename) 
     
     if not os.path.exists(TEMPLATE_PATH):
         return 'Template file not found at expected location. Please re-upload.', 500

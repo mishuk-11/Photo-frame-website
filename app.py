@@ -119,7 +119,6 @@ def home():
     return render_template('index.html') 
 
 # --- ADMIN API ROUTES (Login and Password Management) ---
-# ... (All login/password routes remain the same) ...
 
 @app.route('/check_secondary_password', methods=['POST'])
 def check_secondary_password():
@@ -261,21 +260,11 @@ def update_settings():
                     
                     ext = file.filename.rsplit('.', 1)[1].lower()
                     
-                    # --- CRITICAL BUG FIX HERE ---
+                    # --- CRITICAL BUG FIX (REVERTING TO OVERWRITE) ---
                     if setting_key_prefix == 'template':
-                        # Use a unique, timestamped filename for the template to avoid caching issues
-                        timestamp = datetime.datetime.now().strftime('%Y%m%d%H%M%S')
-                        constant_filename = f"template_{timestamp}.png"
-                        
-                        # Cleanup: Delete the old template file if it exists and is not the default static one
-                        old_filename = settings.get('template_filename')
-                        if old_filename and old_filename != 'template.png': 
-                             old_filepath_to_delete = os.path.join(app.config['UPLOAD_FOLDER'], old_filename)
-                             if os.path.exists(old_filepath_to_delete):
-                                  try:
-                                      os.remove(old_filepath_to_delete)
-                                  except OSError:
-                                      pass
+                        # FORCE the filename to template.png to ensure overwrite and constant reference
+                        constant_filename = "template.png" 
+                        # No cleanup needed; file.save() will overwrite the previous template.png
                     # --- END CRITICAL BUG FIX ---
                     elif setting_key_prefix == 'event_logo':
                         constant_filename = f"event_logo.{ext}" 
@@ -292,6 +281,8 @@ def update_settings():
                     old_filename_key = f'{setting_key_prefix}_filename'
                     
                     # Only delete old files for non-template assets if they use the constant prefix name
+                    # We skip the cleanup for 'template' since the new file is named template.png, 
+                    # and the previous cleanup was only necessary for the timestamped files.
                     if setting_key_prefix != 'template':
                         old_filename = settings.get(old_filename_key)
                         if old_filename and old_filename.startswith(setting_key_prefix):
@@ -302,7 +293,7 @@ def update_settings():
                                 except OSError as e:
                                     pass
                     
-                    file.save(filepath)
+                    file.save(filepath) # This overwrites the old template.png
                     settings[old_filename_key] = constant_filename 
                     
                     return True, f"Updated {setting_key_prefix}."

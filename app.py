@@ -6,6 +6,7 @@ import io
 import os
 import datetime 
 import re 
+import shutil # NEW IMPORT
 
 # --- CONFIGURATION ---
 app = Flask(__name__)
@@ -42,6 +43,30 @@ SUPER_ADMIN_TEMPLATE_NAME = 'daddy.html'
 if not os.path.exists(UPLOAD_FOLDER):
     os.makedirs(UPLOAD_FOLDER)
 
+# --- CRITICAL FIX 2: Copy Initial Assets to Writable Directory ---
+# These are files included in the Git repository but must exist in /tmp/uploads 
+# for the app to function after the first launch.
+DEFAULT_ASSETS = [
+    'template.png',
+    'event_logo.png',
+    'my_logo.png',
+    # Note: Website background names can vary (jpg/png/gif) - relying on admin panel upload.
+]
+
+for asset_filename in DEFAULT_ASSETS:
+    SOURCE_PATH = os.path.join(app.root_path, 'uploads', asset_filename)
+    DEST_PATH = os.path.join(UPLOAD_FOLDER, asset_filename)
+    
+    # Only copy if the file is part of the deployment and doesn't already exist in the /tmp/uploads
+    if os.path.exists(SOURCE_PATH) and not os.path.exists(DEST_PATH):
+        try:
+            shutil.copy2(SOURCE_PATH, DEST_PATH)
+        except Exception as e:
+            # Log but do not crash the app if a default asset is missing
+            print(f"Warning: Could not copy default asset {asset_filename}. Error: {e}")
+# --- END CRITICAL FIX 2 ---
+
+
 # Set initial default settings if the database is empty
 if not db.get(Settings.type == 'global'):
     db.insert({
@@ -50,10 +75,11 @@ if not db.get(Settings.type == 'global'):
         'venue': 'Virtual / Event Hall',
         'date_time': 'January 1, 2026, 10:00 AM',
         'description': 'Upload a photo and frame it with the slider!',
-        'event_logo_filename': '', 
-        'my_logo_filename': '',    
-        'template_filename': '',
-        'background_filename': '', 
+        # Set initial filenames to those we just copied
+        'event_logo_filename': 'event_logo.png', 
+        'my_logo_filename': 'my_logo.png',    
+        'template_filename': 'template.png',
+        'background_filename': '', # Keep empty, let user upload specific background
         'show_sponsors': False, 
         'sponsor_logo_filename': '',
         'admin_password': '123',                    
@@ -72,7 +98,6 @@ def allowed_template(filename):
 # --- ROUTE TO SERVE UPLOADED FILES ---
 @app.route('/uploads/<path:filename>')
 def uploaded_file(filename):
-    # CRITICAL: This serves files from the /tmp/uploads directory on the server
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
 # --- FRONT-END ROUTES ---
@@ -83,7 +108,6 @@ def admin_page():
 
 @app.route(f'/{SUPER_ADMIN_ROUTE_NAME}') 
 def super_admin_page():
-    # Daddy.html is served from the root of the app's code path
     return send_from_directory(app.root_path, SUPER_ADMIN_TEMPLATE_NAME) 
 
 @app.route('/')
@@ -91,6 +115,22 @@ def home():
     return render_template('index.html') 
 
 # --- ADMIN API ROUTES (Login and Password Management) ---
+
+@app.route('/check_secondary_password', methods=['POST'])
+def check_secondary_password():
+    """Securely checks the secondary password before allowing logo update."""
+    submitted_password = request.form.get('secondary_password')
+    settings = db.get(Settings.type == 'global')
+    
+    if not settings:
+        return jsonify({'success': False, 'message': 'Configuration not found.'}), 404
+        
+    correct_password = settings.get(ADMIN_SECONDARY_PASSWORD_KEY, 'ImInZu') 
+    
+    if submitted_password == correct_password:
+        return jsonify({'success': True}), 200
+    else:
+        return jsonify({'success': False, 'message': 'Secondary password incorrect.'}), 401
 
 @app.route('/admin_login_check', methods=['POST'])
 def admin_login_check():
@@ -170,23 +210,6 @@ def super_admin_password_reset():
     
     return jsonify({'success': True, 'message': 'Admin and Secondary passwords updated successfully!'}), 200
 
-
-@app.route('/check_secondary_password', methods=['POST'])
-def check_secondary_password():
-    """Securely checks the secondary password before allowing logo update."""
-    submitted_password = request.form.get('secondary_password')
-    settings = db.get(Settings.type == 'global')
-    
-    if not settings:
-        return jsonify({'success': False, 'message': 'Configuration not found.'}), 404
-        
-    correct_password = settings.get(ADMIN_SECONDARY_PASSWORD_KEY, 'ImInZu') 
-    
-    if submitted_password == correct_password:
-        return jsonify({'success': True}), 200
-    else:
-        return jsonify({'success': False, 'message': 'Secondary password incorrect.'}), 401
-
 @app.route('/get_settings') # Fetch general settings
 def get_settings():
     settings = db.get(Settings.type == 'global')
@@ -246,8 +269,7 @@ def update_settings():
                     else:
                         return False, "Invalid file key prefix."
 
-                    # Filepath is now guaranteed to be in /tmp on the server
-                    filepath = os.path.join(app.config['UPLOAD_FOLDER'], constant_filename) 
+                    filepath = os.path.join(app.config['UPLOAD_FOLDER'], constant_filename)
                     old_filename_key = f'{setting_key_prefix}_filename'
                     
                     old_filename = settings.get(old_filename_key)
@@ -301,7 +323,6 @@ def merge_and_download():
     if not template_filename:
         return 'Template file not specified. Please upload it via the Admin Panel.', 500
 
-    # CRITICAL: This path must use the base directory defined earlier
     TEMPLATE_PATH = os.path.join(app.config['UPLOAD_FOLDER'], template_filename) 
     
     if not os.path.exists(TEMPLATE_PATH):

@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Super Admin Panel - DADDY</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f0f2f5;
+            color: #333;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            padding: 40px;
+        }
+        
+        .panel {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
+            width: 100%;
+            max-width: 500px;
+            margin-bottom: 20px;
+            border: 2px solid #dc2626;
+        }
+        
+        h2 {
+            color: #dc2626;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        
+        h3 {
+            color: #1e3a8a;
+            margin-top: 0;
+        }
+        
+        label {
+            display: block;
+            margin-top: 15px;
+            margin-bottom: 5px;
+            font-weight: 600;
+            color: #1f2937;
+        }
+        
+        input[type="password"] {
+            padding: 10px;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            width: 100%;
+            box-sizing: border-box;
+            font-size: 16px;
+            margin-bottom: 15px;
+        }
+        
+        button {
+            background-color: #dc2626;
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 1em;
+            width: 100%;
+            transition: background-color 0.3s;
+        }
+        
+        button:hover {
+            background-color: #ef4444;
+        }
+        
+        .alert {
+            padding: 15px;
+            border-radius: 6px;
+            margin-top: 20px;
+            text-align: center;
+            font-weight: 600;
+        }
+        
+        .alert.success {
+            background-color: #d1fae5;
+            color: #065f46;
+        }
+        
+        .alert.error {
+            background-color: #fee2e2;
+            color: #991b1b;
+        }
+        
+        #admin-dashboard {
+            display: none;
+        }
+        
+        .logo-reset-group {
+            padding: 15px;
+            border: 1px dashed #60a5fa;
+            border-radius: 6px;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="password-panel" class="panel">
+        <h2>Super Admin Login</h2>
+        <form id="login-form">
+            <label for="password">Super Admin Password:</label>
+            <input type="password" id="password" name="password" required>
+            <button type="submit">Login as Super Admin</button>
+        </form>
+        <div id="login-message" class="alert error" style="display:none;"></div>
+    </div>
+
+    <div id="admin-dashboard" class="panel">
+        <h2>Super Admin Control Panel</h2>
+        <div id="status-message" class="alert success" style="display:none;"></div>
+
+        <h3>Reset Coordinator Passwords</h3>
+        <p style="color: #4b5563; font-size: 0.9em;">This panel overrides the existing Coordinator Login (/alibaba) and Secondary Logo Passwords.</p>
+
+        <form id="password-reset-form">
+            <label for="new_admin_pass">New Coordinator Admin (/alibaba) Password:</label>
+            <input type="password" id="new_admin_pass" name="new_admin_pass" required minlength="3" placeholder="New Alibaba Login Password">
+
+            <div class="logo-reset-group">
+                <label for="new_secondary_pass">New Secondary Logo Password (ImInZu equivalent):</label>
+                <input type="password" id="new_secondary_pass" name="new_secondary_pass" required minlength="3" placeholder="New Logo Protection Password">
+            </div>
+
+            <button type="submit">Reset BOTH Passwords</button>
+            <div id="reset-status-message" class="alert" style="display:none;"></div>
+        </form>
+    </div>
+
+    <script>
+        const loginForm = document.getElementById('login-form');
+        const loginPanel = document.getElementById('password-panel');
+        const dashboard = document.getElementById('admin-dashboard');
+        const passwordResetForm = document.getElementById('password-reset-form');
+        const resetStatusMessage = document.getElementById('reset-status-message');
+
+        // --- LOGIN LOGIC ---
+        loginForm.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const inputPassword = document.getElementById('password').value;
+            const loginMessage = document.getElementById('login-message');
+            loginMessage.style.display = 'none';
+
+            try {
+                const formData = new FormData();
+                formData.append('password', inputPassword);
+
+                const response = await fetch('/super_admin_login_check', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (response.ok) {
+                    loginPanel.style.display = 'none';
+                    dashboard.style.display = 'block';
+                } else {
+                    const error = await response.json();
+                    loginMessage.textContent = error.message || "Invalid Super Admin password.";
+                    loginMessage.style.display = 'block';
+                }
+            } catch (error) {
+                loginMessage.textContent = "Network error during login.";
+                loginMessage.style.display = 'block';
+                console.error('Login failed:', error);
+            }
+        });
+
+        // --- PASSWORD RESET LOGIC ---
+        passwordResetForm.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            resetStatusMessage.style.display = 'none';
+
+            const newAdminPass = document.getElementById('new_admin_pass').value;
+            const newSecondaryPass = document.getElementById('new_secondary_pass').value;
+
+            if (newAdminPass.length < 3 || newSecondaryPass.length < 3) {
+                resetStatusMessage.textContent = "Both passwords must be at least 3 characters long.";
+                resetStatusMessage.classList.remove('success');
+                resetStatusMessage.classList.add('error');
+                resetStatusMessage.style.display = 'block';
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('new_admin_pass', newAdminPass);
+            formData.append('new_secondary_pass', newSecondaryPass);
+
+            try {
+                const response = await fetch('/super_admin_password_reset', {
+                    method: 'POST',
+                    body: formData,
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    resetStatusMessage.textContent = result.message;
+                    resetStatusMessage.classList.remove('error');
+                    resetStatusMessage.classList.add('success');
+
+                    document.getElementById('new_admin_pass').value = '';
+                    document.getElementById('new_secondary_pass').value = '';
+
+                } else {
+                    resetStatusMessage.textContent = result.message || 'Error updating passwords.';
+                    resetStatusMessage.classList.remove('success');
+                    resetStatusMessage.classList.add('error');
+                }
+            } catch (error) {
+                resetStatusMessage.textContent = 'Network error during password update.';
+                resetStatusMessage.classList.remove('success');
+                resetStatusMessage.classList.add('error');
+            } finally {
+                resetStatusMessage.style.display = 'block';
+            }
+        });
+    </script>
+</body>
+
+</html>

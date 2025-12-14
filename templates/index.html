@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>⚡ Event Banner Generator</title>
+    <style>
+        /* Modern Reset and Typography */
+        body { 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            background-color: #f0f2f5; 
+            color: #333;
+            display: flex; 
+            flex-direction: column;
+            justify-content: center; 
+            align-items: center; 
+            min-height: 100vh; 
+            margin: 0; 
+            padding: 20px;
+            /* Hide content until loader is done */
+            opacity: 0; 
+            transition: opacity 0.5s; 
+            
+            /* Background image properties (handled by JS for uploaded file) */
+            background-size: cover;
+            background-repeat: no-repeat;
+            background-attachment: fixed; 
+            background-position: center center;
+        }
+        body.loaded {
+            opacity: 1;
+        }
+        h2, h3 { color: #1e3a8a; }
+        
+        /* Input and Label Styles */
+        label { display: block; margin-top: 15px; margin-bottom: 5px; font-weight: 600; color: #1f2937; }
+        input[type="file"] { margin-bottom: 20px; }
+
+
+        /* --- PRE-LOADER STYLES (Splash Screen) --- */
+        #loader-wrapper {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #ffffff; 
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999; 
+            opacity: 1;
+            transition: opacity 0.5s ease-out, visibility 0.5s;
+        }
+        .loader-hide {
+            opacity: 0 !important;
+            visibility: hidden;
+        }
+
+        .logo-container {
+            display: flex;
+            gap: 40px;
+            margin-bottom: 20px;
+        }
+        .logo-box {
+            width: 120px;
+            height: 120px;
+            background-color: #e0e7ff; 
+            border-radius: 8px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 14px;
+            color: #1e3a8a;
+            font-weight: 600;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+            animation: fadeIn 1s ease-in-out;
+            
+            background-size: contain; 
+            background-repeat: no-repeat;
+            background-position: center;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: scale(0.8); }
+            to { opacity: 1; transform: scale(1); }
+        }
+        .loading-text {
+            color: #6b7280; 
+            margin-top: 20px;
+            font-size: 1.1em;
+            text-shadow: none;
+        }
+
+
+        /* --- MAIN APP STYLES (Restored UI) --- */
+        .app-container {
+            display: flex;
+            gap: 30px;
+            max-width: 1200px;
+            width: 95%;
+            margin-bottom: 30px;
+            padding: 0; 
+            background-color: transparent;
+        }
+        .info-panel, .generator-panel {
+            background: #ffffff;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+        }
+        .info-panel {
+            width: 30%;
+            min-width: 300px;
+            text-align: left;
+        }
+        .generator-panel {
+            width: 70%;
+        }
+        
+        /* Process Button */
+        #processButton {
+            background-color: #1e3a8a; 
+            color: white; 
+            border: none; 
+            cursor: pointer; 
+            padding: 12px; 
+            border-radius: 6px; 
+            width: 100%;
+            font-size: 1.1em;
+            transition: background-color 0.3s;
+            margin-top: 15px; 
+        }
+        #processButton:hover:not(:disabled) { background-color: #1d4ed8; }
+        #processButton:disabled { background-color: #93c5fd; cursor: not-allowed; }
+        
+        /* Preview Area (CRITICAL FOR LIVE VIEW) */
+        #preview-window {
+            width: 100%;
+            padding-bottom: 100%; 
+            position: relative;
+            overflow: hidden; 
+            border: 2px solid #3b82f6; 
+            background-color: #f9fafb;
+            margin-bottom: 5px; 
+            border-radius: 8px;
+        }
+        #preview-image {
+            display: none;
+            position: absolute; 
+            top: 0;
+            left: 0;
+            width: 100%; 
+            height: 100%;
+            object-fit: cover; 
+            cursor: grab; 
+            transition: transform 0.1s; 
+            opacity: 0.9; 
+        }
+        #template-overlay {
+            display: none; 
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none; 
+            background-size: cover; 
+            background-repeat: no-repeat;
+        }
+        
+        /* Zoom Control */
+        .zoom-controls {
+            margin-top: 15px;
+            margin-bottom: 10px;
+        }
+        
+        /* Download Area */
+        .download-link {
+            display: inline-block;
+            background-color: #059669; 
+            color: white;
+            padding: 12px 25px;
+            border-radius: 6px;
+            text-decoration: none;
+            font-weight: 600;
+            transition: background-color 0.3s;
+        }
+        
+        /* New Sponsor Logo Styling */
+        #sponsor-logo-display {
+            width: 100%;
+            height: 60px; 
+            background-size: contain; 
+            background-repeat: no-repeat;
+            background-position: center left;
+            margin-top: 10px;
+            opacity: 0.8;
+        }
+
+        /* --- RESPONSIVE MOBILE STYLES (Restored) --- */
+        @media (max-width: 768px) {
+            .app-container { 
+                flex-direction: column; 
+                gap: 20px; 
+            }
+            .info-panel, .generator-panel { 
+                width: 100%; 
+                min-width: auto; 
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body id="app-body">
+    <div id="loader-wrapper">
+        <div class="logo-container">
+            <div id="splash-event-logo" class="logo-box">Event Logo</div>
+            <div id="splash-my-logo" class="logo-box">Techtical Media Logo</div>
+        </div>
+        <div class="loading-text">Loading Banner Generator...</div>
+    </div>
+
+    <div class="app-container">
+        <div class="info-panel">
+            <div id="event-logo-display" class="logo-box">EVENT LOGO</div>
+            <h2 id="event-name-display">Loading Event Name...</h2>
+            <p style="color: #6b7280;">Generate your personalized event banner instantly!</p>
+
+            <div style="margin-top: 20px;">
+                <div class="info-detail">
+                    <strong>Time</strong>
+                    <span id="date-time-display">Loading...</span>
+                </div>
+                <div class="info-detail">
+                    <strong>Venue</strong>
+                    <span id="venue-display">Loading...</span>
+                </div>
+                <div class="info-detail">
+                    <strong>Instructions</strong>
+                    <span id="description-display">Loading...</span>
+                </div>
+            </div>
+            
+            <div style="margin-top: 30px; padding-top: 15px; border-top: 1px solid #e5e7eb;">
+                <strong style="display: block; margin-bottom: 5px; color: #1e3a8a;">Event Software Support</strong>
+                <div id="my-logo-display" class="logo-box" style="width: 100px; height: 50px; color: #9ca3af;">
+                    MY LOGO
+                </div>
+            </div>
+
+            <div id="sponsor-section" style="margin-top: 20px; padding-top: 15px; border-top: 1px solid #e5e7eb; display:none;">
+                 <strong style="display: block; margin-bottom: 5px; color: #1e3a8a;">Event Sponsors</strong>
+                 <div id="sponsor-logo-display">Loading Sponsor...</div>
+            </div>
+
+        </div>
+
+        <div class="generator-panel">
+            <h2>Image Setup</h2>
+
+            <form id="uploadForm" action="/merge_images" method="POST" enctype="multipart/form-data">
+                <label for="fileInput">1. Choose Background Image:</label>
+                <input type="file" id="fileInput" name="image_upload" accept="image/*" required>
+                
+                <input type="hidden" id="scaleInput" name="scale" value="1.0">
+                <input type="hidden" id="xOffsetInput" name="x_offset" value="0">
+                <input type="hidden" id="yOffsetInput" name="y_offset" value="0">
+            </form>
+
+            <div id="preview-section">
+                <h3>Preview (1:1 Aspect Ratio)</h3>
+                
+                <div class="zoom-controls">
+                    <label for="zoom-slider">Zoom Level (50% to 400%)</label>
+                    <input type="range" id="zoom-slider" min="50" max="400" value="100" step="10">
+                </div>
+
+                <div id="preview-window">
+                    <img id="preview-image" alt="Image Preview">
+                    <div id="template-overlay"></div>
+                    <p id="placeholder-text">Upload an image above to begin framing.</p>
+                </div>
+                
+                <button id="processButton">2. Process & Prepare for Download</button>
+
+                <div id="download-area">
+                    <p id="download-status" style="color: #6b7280; margin-top: 15px;">3. Click 'Process' above to generate your final banner.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="copyright">
+        &copy; 2025 Inzamam Islam, Techtical Media. All rights reserved.
+    </div>
+
+    <script>
+        // --- PRE-LOADER LOGIC (Unchanged) ---
+        const loaderWrapper = document.getElementById('loader-wrapper');
+        const appBody = document.getElementById('app-body');
+        
+        const splashEventLogo = document.getElementById('splash-event-logo');
+        const splashMyLogo = document.getElementById('splash-my-logo');
+
+        let settingsLoaded = false;
+        let loaderTimerDone = false;
+        
+        function finishLoading() {
+            if (settingsLoaded && loaderTimerDone) {
+                loaderWrapper.classList.add('loader-hide');
+                appBody.classList.add('loaded');
+            }
+        }
+
+        window.addEventListener('load', function() {
+            setTimeout(function() {
+                loaderTimerDone = true;
+                finishLoading();
+            }, 5000); 
+        });
+        
+        // --- DYNAMIC CONTENT LOADER ---
+        async function loadContent() {
+            const getUploadUrl = (filename) => `/uploads/${filename}`;
+            const sponsorSection = document.getElementById('sponsor-section');
+            const sponsorLogoDisplay = document.getElementById('sponsor-logo-display');
+
+            try {
+                const response = await fetch('/get_settings');
+                if (response.ok) {
+                    const data = await response.json();
+                    
+                    // 1. Update Text Content
+                    document.getElementById('event-name-display').textContent = data.event_name;
+                    document.getElementById('date-time-display').textContent = data.date_time;
+                    document.getElementById('venue-display').textContent = data.venue;
+                    document.getElementById('description-display').textContent = data.description;
+                    
+                    // 2. Update Logos and Template Overlay
+                    const eventLogoMain = document.getElementById('event-logo-display');
+                    const myLogoMain = document.getElementById('my-logo-display');
+                    const templateOverlay = document.getElementById('template-overlay');
+                    
+                    // Helper function to update a logo box with explicit, GUARANTEED styles
+                    const updateLogoBox = (element, filename, fallbackText, width = '120px', height = '120px') => {
+                        // CRITICAL: Reset background image, then re-apply all display styles
+                        element.style.cssText = `
+                            width: ${width} !important;
+                            height: ${height} !important;
+                            background-size: contain !important;
+                            background-repeat: no-repeat !important;
+                            background-position: center !important;
+                            background-image: none !important;
+                            border-radius: 8px;
+                        `;
+                        
+                        // --- STYLE DICHOTOMY: Splash Screen vs. Main Page ---
+
+                        if (element === splashEventLogo || element === splashMyLogo) {
+                            // SPLASH SCREEN: Needs visible box and shadow for contrast on white background
+                            element.style.backgroundColor = '#e0e7ff';
+                            element.style.boxShadow = '0 4px 10px rgba(0, 0, 0, 0.1)';
+                            element.style.border = 'none';
+                            element.style.color = '#1e3a8a';
+                        } else if (element === eventLogoMain) {
+                            // MAIN EVENT LOGO: Needs transparency and no shadow/box
+                            element.style.backgroundColor = 'transparent'; 
+                            element.style.boxShadow = 'none';
+                            element.style.border = 'none';
+                        } else if (element === myLogoMain) {
+                            // MAIN MY LOGO: Needs explicit border for the support box style
+                            element.style.backgroundColor = 'transparent'; 
+                            element.style.boxShadow = 'none';
+                            element.style.border = '1px dashed #d1d5db';
+                            element.style.color = '#9ca3af';
+                        }
+                        
+                        if (filename) {
+                            element.style.backgroundImage = `url(${getUploadUrl(filename)})`;
+                            element.textContent = "";
+                        } else {
+                            element.textContent = fallbackText;
+                        }
+                    };
+
+                    // Update Main Site Logos
+                    updateLogoBox(eventLogoMain, data.event_logo_filename, "EVENT LOGO");
+                    
+                    // Update My Logo (Smaller size for footer/support section)
+                    updateLogoBox(myLogoMain, data.my_logo_filename, "MY LOGO", '100px', '50px');
+                    
+                    // Update Splash Screen Logos
+                    updateLogoBox(splashEventLogo, data.event_logo_filename, "Event Logo");
+                    updateLogoBox(splashMyLogo, data.my_logo_filename, "Techtical Media Logo");
+                    
+                    // 3. Update Template Overlay 
+                    if (data.template_filename) {
+                        templateOverlay.style.backgroundImage = `url(${getUploadUrl(data.template_filename)})`;
+                        templateOverlay.style.display = 'block'; 
+                    } else {
+                        templateOverlay.style.backgroundImage = 'none';
+                        templateOverlay.style.display = 'none';
+                    }
+
+                    // 4. Apply Website Background Image
+                    if (data.background_filename) {
+                        appBody.style.backgroundImage = `url(${getUploadUrl(data.background_filename)})`;
+                        appBody.style.backgroundColor = 'transparent'; 
+                    } else {
+                        appBody.style.backgroundImage = 'none';
+                        appBody.style.backgroundColor = '#f0f2f5'; 
+                    }
+
+                    // 5. NEW: Handle Sponsor Section
+                    if (data.show_sponsors && data.sponsor_logo_filename) {
+                        sponsorLogoDisplay.style.backgroundImage = `url(${getUploadUrl(data.sponsor_logo_filename)})`;
+                        sponsorLogoDisplay.textContent = "";
+                        sponsorSection.style.display = 'block'; // Show the entire section
+                    } else {
+                        sponsorSection.style.display = 'none'; // Hide the entire section
+                    }
+                    
+                    settingsLoaded = true;
+                }
+            } catch (error) {
+                console.error("Failed to load settings:", error);
+                settingsLoaded = true; 
+            }
+            finishLoading();
+        }
+        
+        loadContent(); // Start loading dynamic content immediately
+
+        // --- MAIN APP JAVASCRIPT (Drag, Zoom, Process Logic - Unchanged) ---
+        const fileInput = document.getElementById('fileInput');
+        const previewImage = document.getElementById('preview-image');
+        const templateOverlay = document.getElementById('template-overlay'); 
+        const placeholderText = document.getElementById('placeholder-text');
+        const zoomSlider = document.getElementById('zoom-slider');
+        const scaleInput = document.getElementById('scaleInput');
+        const xOffsetInput = document.getElementById('xOffsetInput');
+        const yOffsetInput = document.getElementById('yOffsetInput');
+        const uploadForm = document.getElementById('uploadForm');
+        const processButton = document.getElementById('processButton'); 
+        const downloadArea = document.getElementById('download-area');
+
+        let currentScale = 1.0;
+        let currentX = 0;
+        let currentY = 0;
+        let isDragging = false;
+        let startX, startY; 
+
+        function updateTransform() {
+            const transformValue = `scale(${currentScale}) translate(${currentX}px, ${currentY}px)`;
+            previewImage.style.transform = transformValue;
+            scaleInput.value = currentScale;
+            xOffsetInput.value = currentX;
+            yOffsetInput.value = currentY;
+        }
+
+        fileInput.addEventListener('change', function() {
+            const file = this.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    previewImage.src = e.target.result;
+                    previewImage.style.display = 'block';
+                    templateOverlay.style.display = 'block'; 
+                    placeholderText.style.display = 'none';
+                    
+                    currentScale = 1.0;
+                    currentX = 0;
+                    currentY = 0;
+                    zoomSlider.value = 100; 
+                    updateTransform();
+                    
+                    downloadArea.innerHTML = '<p id="download-status" style="color: #6b7280; margin-top: 15px;">3. Click \'Process\' above to generate your final banner.</p>';
+                };
+                reader.readAsDataURL(file);
+            } else {
+                previewImage.style.display = 'none';
+                templateOverlay.style.display = 'none'; 
+                placeholderText.style.display = 'block';
+            }
+        });
+
+        zoomSlider.addEventListener('input', function() {
+            currentScale = this.value / 100;
+            updateTransform();
+        });
+
+        previewImage.addEventListener('mousedown', function(e) {
+            if (previewImage.style.display === 'block') {
+                isDragging = true;
+                startX = e.clientX;
+                startY = e.clientY;
+                previewImage.style.cursor = 'grabbing';
+                e.preventDefault(); 
+            }
+        });
+
+        document.addEventListener('mousemove', function(e) {
+            if (!isDragging) return;
+            
+            const dx = e.clientX - startX;
+            const dy = e.clientY - startY;
+
+            currentX += dx;
+            currentY += dy;
+            
+            startX = e.clientX;
+            startY = e.clientY;
+
+            updateTransform();
+        });
+
+        document.addEventListener('mouseup', function() {
+            if (isDragging) {
+                isDragging = false;
+                previewImage.style.cursor = 'grab';
+            }
+        });
+
+        processButton.addEventListener('click', async function(e) {
+            e.preventDefault();
+            
+            if (!fileInput.files.length) {
+                alert("Please select an image first.");
+                return;
+            }
+
+            processButton.disabled = true;
+            processButton.textContent = 'Processing... Please wait.';
+            downloadArea.innerHTML = '<p style="color: #f59e0b; margin-top: 15px;">Processing image on server...</p>';
+            
+            const formData = new FormData(uploadForm);
+            
+            try {
+                const response = await fetch(uploadForm.action, {
+                    method: 'POST',
+                    body: formData,
+                });
+
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const url = URL.createObjectURL(blob);
+                    
+                    // download attribute is REMOVED to allow server filename (app.py) to be used.
+                    downloadArea.innerHTML = `
+                        <p id="download-status" style="color: #059669; margin-top: 15px; font-weight: 600;">Success! Your banner is ready.</p>
+                        <a href="${url}" download class="download-link" style="margin-top: 10px;">
+                            3. Download Final Banner (JPG)
+                        </a>
+                    `;
+                } else {
+                    const errorText = await response.text();
+                    downloadArea.innerHTML = `<p style="color: #dc2626; margin-top: 15px;">Error: ${errorText}</p>`;
+                    console.error("Server Error Response:", errorText);
+                }
+
+            } catch (error) {
+                console.error('Submission failed:', error);
+                downloadArea.innerHTML = `<p style="color: #dc2626; margin-top: 15px;">Network Error: Please try again.</p>`;
+            } finally {
+                processButton.disabled = false;
+                processButton.textContent = '2. Process & Prepare for Download';
+            }
+        });
+    </script>
+</body>
+</html>

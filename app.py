@@ -6,7 +6,7 @@ import io
 import os
 import datetime 
 import re 
-import shutil # NEW IMPORT
+import shutil 
 
 # --- CONFIGURATION ---
 app = Flask(__name__)
@@ -14,7 +14,9 @@ app = Flask(__name__)
 # --- CRITICAL FIX: Use /tmp directory for writable files on serverless platforms ---
 # Check if running in a cloud environment (e.g., Vercel, Heroku) and use the /tmp directory
 # Otherwise, use the local path for development.
-if os.environ.get('VERCEL') or os.environ.get('DYNO'): 
+IS_SERVERLESS = os.environ.get('VERCEL') or os.environ.get('DYNO')
+
+if IS_SERVERLESS: 
     BASE_DIR = '/tmp'
 else:
     BASE_DIR = app.root_path
@@ -39,53 +41,62 @@ SUPER_ADMIN_ROUTE_NAME = 'daddy'
 SUPER_ADMIN_TEMPLATE_NAME = 'daddy.html' 
 # ------------------------------------------------------------------
 
-# Ensure uploads folder exists (This will now run successfully in /tmp)
+# Ensure uploads folder exists
 if not os.path.exists(UPLOAD_FOLDER):
     os.makedirs(UPLOAD_FOLDER)
 
+# --- CRITICAL FIX: Check if database file exists BEFORE deciding to copy assets/insert defaults ---
+# If running locally (not serverless) AND settings.json does not exist, we can use the default insert logic.
+SHOULD_INSERT_DEFAULTS = not IS_SERVERLESS and not os.path.exists(DB_PATH)
+
+
 # --- CRITICAL FIX 2: Copy Initial Assets to Writable Directory ---
-# These are files included in the Git repository but must exist in /tmp/uploads 
-# for the app to function after the first launch.
 DEFAULT_ASSETS = [
     'template.png',
     'event_logo.png',
     'my_logo.png',
-    # Note: Website background names can vary (jpg/png/gif) - relying on admin panel upload.
 ]
 
 for asset_filename in DEFAULT_ASSETS:
     SOURCE_PATH = os.path.join(app.root_path, 'uploads', asset_filename)
     DEST_PATH = os.path.join(UPLOAD_FOLDER, asset_filename)
     
-    # Only copy if the file is part of the deployment and doesn't already exist in the /tmp/uploads
+    # Copy if the source file exists and the destination file is missing
     if os.path.exists(SOURCE_PATH) and not os.path.exists(DEST_PATH):
         try:
             shutil.copy2(SOURCE_PATH, DEST_PATH)
+            # If we copy default assets, we MUST assume we need to insert the DB defaults too, 
+            # UNLESS the DB already exists in the read-only section (which it shouldn't in a clean deploy)
+            if IS_SERVERLESS:
+                SHOULD_INSERT_DEFAULTS = True 
+
         except Exception as e:
-            # Log but do not crash the app if a default asset is missing
             print(f"Warning: Could not copy default asset {asset_filename}. Error: {e}")
+            
 # --- END CRITICAL FIX 2 ---
 
 
-# Set initial default settings if the database is empty
-if not db.get(Settings.type == 'global'):
+# --- CRITICAL FIX 3: Default insertion logic adjusted for Serverless ---
+# This block is only for a completely fresh start (local or serverless).
+if SHOULD_INSERT_DEFAULTS and not db.get(Settings.type == 'global'):
     db.insert({
         'type': 'global',
-        'event_name': 'Sample Event Name',
+        'event_name': 'Default Event Name (Persists until changed)',
         'venue': 'Virtual / Event Hall',
         'date_time': 'January 1, 2026, 10:00 AM',
         'description': 'Upload a photo and frame it with the slider!',
-        # Set initial filenames to those we just copied
         'event_logo_filename': 'event_logo.png', 
         'my_logo_filename': 'my_logo.png',    
         'template_filename': 'template.png',
-        'background_filename': '', # Keep empty, let user upload specific background
+        'background_filename': '', 
         'show_sponsors': False, 
         'sponsor_logo_filename': '',
         'admin_password': '123',                    
         'super_admin_password': 'daddy123',          
         ADMIN_SECONDARY_PASSWORD_KEY: 'ImInZu'       
     })
+# --- END CRITICAL FIX 3 ---
+
 
 # Helper functions for file validation
 def allowed_file(filename):
@@ -269,7 +280,7 @@ def update_settings():
                     else:
                         return False, "Invalid file key prefix."
 
-                    filepath = os.path.join(app.config['UPLOAD_FOLDER'], constant_filename)
+                    filepath = os.path.join(app.config['UPLOAD_FOLDER'], constant_filename) 
                     old_filename_key = f'{setting_key_prefix}_filename'
                     
                     old_filename = settings.get(old_filename_key)

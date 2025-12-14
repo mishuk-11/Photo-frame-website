@@ -12,8 +12,6 @@ import shutil
 app = Flask(__name__)
 
 # --- CRITICAL FIX: Use /tmp directory for writable files on serverless platforms ---
-# Check if running in a cloud environment (e.g., Vercel, Heroku) and use the /tmp directory
-# Otherwise, use the local path for development.
 IS_SERVERLESS = os.environ.get('VERCEL') or os.environ.get('DYNO')
 
 if IS_SERVERLESS: 
@@ -46,13 +44,12 @@ if not os.path.exists(UPLOAD_FOLDER):
     os.makedirs(UPLOAD_FOLDER)
 
 # --- CRITICAL FIX: Check if database file exists BEFORE deciding to copy assets/insert defaults ---
-# If running locally (not serverless) AND settings.json does not exist, we can use the default insert logic.
 SHOULD_INSERT_DEFAULTS = not IS_SERVERLESS and not os.path.exists(DB_PATH)
 
 
 # --- CRITICAL FIX 2: Copy Initial Assets to Writable Directory ---
 DEFAULT_ASSETS = [
-    'template.png',
+    'template.png', # Default static template
     'event_logo.png',
     'my_logo.png',
 ]
@@ -61,12 +58,9 @@ for asset_filename in DEFAULT_ASSETS:
     SOURCE_PATH = os.path.join(app.root_path, 'uploads', asset_filename)
     DEST_PATH = os.path.join(UPLOAD_FOLDER, asset_filename)
     
-    # Copy if the source file exists and the destination file is missing
     if os.path.exists(SOURCE_PATH) and not os.path.exists(DEST_PATH):
         try:
             shutil.copy2(SOURCE_PATH, DEST_PATH)
-            # If we copy default assets, we MUST assume we need to insert the DB defaults too, 
-            # UNLESS the DB already exists in the read-only section (which it shouldn't in a clean deploy)
             if IS_SERVERLESS:
                 SHOULD_INSERT_DEFAULTS = True 
 
@@ -77,7 +71,6 @@ for asset_filename in DEFAULT_ASSETS:
 
 
 # --- CRITICAL FIX 3: Default insertion logic adjusted for Serverless ---
-# This block is only for a completely fresh start (local or serverless).
 if SHOULD_INSERT_DEFAULTS and not db.get(Settings.type == 'global'):
     db.insert({
         'type': 'global',
@@ -87,7 +80,7 @@ if SHOULD_INSERT_DEFAULTS and not db.get(Settings.type == 'global'):
         'description': 'Upload a photo and frame it with the slider!',
         'event_logo_filename': 'event_logo.png', 
         'my_logo_filename': 'my_logo.png',    
-        'template_filename': 'template.png',
+        'template_filename': 'template.png', # Default file name
         'background_filename': '', 
         'show_sponsors': False, 
         'sponsor_logo_filename': '',
@@ -126,6 +119,7 @@ def home():
     return render_template('index.html') 
 
 # --- ADMIN API ROUTES (Login and Password Management) ---
+# ... (All login/password routes remain the same) ...
 
 @app.route('/check_secondary_password', methods=['POST'])
 def check_secondary_password():
@@ -267,8 +261,22 @@ def update_settings():
                     
                     ext = file.filename.rsplit('.', 1)[1].lower()
                     
+                    # --- CRITICAL BUG FIX HERE ---
                     if setting_key_prefix == 'template':
-                        constant_filename = f"template.png"
+                        # Use a unique, timestamped filename for the template to avoid caching issues
+                        timestamp = datetime.datetime.now().strftime('%Y%m%d%H%M%S')
+                        constant_filename = f"template_{timestamp}.png"
+                        
+                        # Cleanup: Delete the old template file if it exists and is not the default static one
+                        old_filename = settings.get('template_filename')
+                        if old_filename and old_filename != 'template.png': 
+                             old_filepath_to_delete = os.path.join(app.config['UPLOAD_FOLDER'], old_filename)
+                             if os.path.exists(old_filepath_to_delete):
+                                  try:
+                                      os.remove(old_filepath_to_delete)
+                                  except OSError:
+                                      pass
+                    # --- END CRITICAL BUG FIX ---
                     elif setting_key_prefix == 'event_logo':
                         constant_filename = f"event_logo.{ext}" 
                     elif setting_key_prefix == 'my_logo':
@@ -283,14 +291,16 @@ def update_settings():
                     filepath = os.path.join(app.config['UPLOAD_FOLDER'], constant_filename) 
                     old_filename_key = f'{setting_key_prefix}_filename'
                     
-                    old_filename = settings.get(old_filename_key)
-                    if old_filename and old_filename.startswith(setting_key_prefix):
-                         old_filepath_to_delete = os.path.join(app.config['UPLOAD_FOLDER'], old_filename)
-                         if os.path.exists(old_filepath_to_delete):
-                              try:
-                                  os.remove(old_filepath_to_delete)
-                              except OSError as e:
-                                  pass
+                    # Only delete old files for non-template assets if they use the constant prefix name
+                    if setting_key_prefix != 'template':
+                        old_filename = settings.get(old_filename_key)
+                        if old_filename and old_filename.startswith(setting_key_prefix):
+                            old_filepath_to_delete = os.path.join(app.config['UPLOAD_FOLDER'], old_filename)
+                            if os.path.exists(old_filepath_to_delete):
+                                try:
+                                    os.remove(old_filepath_to_delete)
+                                except OSError as e:
+                                    pass
                     
                     file.save(filepath)
                     settings[old_filename_key] = constant_filename 
@@ -328,7 +338,7 @@ def update_settings():
 @app.route('/merge_images', methods=['POST'])
 def merge_and_download():
     settings = db.get(Settings.type == 'global')
-    template_filename = settings.get('template_filename')
+    template_filename = settings.get('template_filename') 
     event_name = settings.get('event_name', 'EventBanner') 
 
     if not template_filename:
@@ -353,7 +363,7 @@ def merge_and_download():
 
     try:
         backside_img = Image.open(uploaded_file.stream).convert("RGB")
-        template_img = Image.open(TEMPLATE_PATH) 
+        template_img = Image.open(TEMPLATE_PATH) # <-- This now opens the unique file path
         
         TARGET_SIZE = 800
         PREVIEW_WIDTH = 600

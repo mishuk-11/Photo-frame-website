@@ -1,0 +1,4 @@
+Flask
+Pillow
+tinydb
+gunicorn # Vercel often requires a WSGI server like gunicorn
